@@ -2,6 +2,8 @@
 
 A lightweight, vanilla JavaScript library for creating interactive data tables with sorting, filtering, resizable columns, row selection, and responsive behavior.
 
+**Repository**: [https://github.com/arce/simple-table](https://github.com/arce/simple-table)
+
 ## Features
 
 - **Sortable columns** – click column headers to sort ascending/descending.
