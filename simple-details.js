@@ -7,7 +7,12 @@ class SimpleDetail {
   }
 
   init() {
-    if (document.getElementById('simple-detail-overlay')) return;
+    const existing = document.getElementById('simple-detail-overlay');
+    if (existing) {
+      this.overlay = existing;
+      this.container = existing.querySelector('.simple-detail-box');
+      return;
+    }
 
     this.overlay = document.createElement('div');
     this.overlay.id = 'simple-detail-overlay';

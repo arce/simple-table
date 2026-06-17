@@ -16,7 +16,9 @@ class SimpleTable {
     this.selectedRows = new Set();
     this.lastSelected = null;
     this.currentFilters = {};
-    this.filterTimeout = null;
+    this.filterTimeouts = {};
+    this.pageSize = options.pageSize || null;
+    this.currentPage = 1;
 
     this.table = null;
     this.tbody = null;
@@ -39,7 +41,8 @@ class SimpleTable {
 
     if (this.responsive) {
       if (typeof ResizeObserver !== 'undefined') {
-        new ResizeObserver(this.onResize).observe(this.container);
+        this._resizeObserver = new ResizeObserver(this.onResize);
+        this._resizeObserver.observe(this.container);
       } else {
         window.addEventListener('resize', this.onResize);
       }
@@ -74,7 +77,16 @@ class SimpleTable {
 
     this.tbody = document.createElement('tbody');
     this.table.appendChild(this.tbody);
-    this.container.appendChild(this.table);
+
+    this.tableWrapper = document.createElement('div');
+    this.tableWrapper.className = 'simple-table-wrapper';
+    this.tableWrapper.appendChild(this.table);
+    this.container.appendChild(this.tableWrapper);
+
+    if (this.pageSize) {
+      this.paginationBar = this._createPaginationBar();
+      this.container.appendChild(this.paginationBar);
+    }
   }
 
   createHeaderCell(col, index) {
@@ -106,14 +118,14 @@ class SimpleTable {
 
   createTextFilter(field) {
     const input = document.createElement('input');
-    input.placeholder = 'Filtrar...';
+    input.placeholder = 'Filter...';
     input.style.width = '100%';
     input.dataset.field = field;
     input.dataset.type = 'text';
 
     input.addEventListener('input', (e) => {
-      clearTimeout(this.filterTimeout);
-      this.filterTimeout = setTimeout(() => {
+      clearTimeout(this.filterTimeouts[field]);
+      this.filterTimeouts[field] = setTimeout(() => {
         this.currentFilters[field] = { type: 'text', value: e.target.value.toLowerCase() };
         this.applyFilters();
       }, 300);
@@ -135,8 +147,8 @@ class SimpleTable {
     const min = createInp('Min'), max = createInp('Max');
 
     const onRangeInput = () => {
-      clearTimeout(this.filterTimeout);
-      this.filterTimeout = setTimeout(() => {
+      clearTimeout(this.filterTimeouts[field]);
+      this.filterTimeouts[field] = setTimeout(() => {
         this.currentFilters[field] = { type: 'range', min: min.value, max: max.value };
         this.applyFilters();
       }, 300);
@@ -165,16 +177,20 @@ class SimpleTable {
       });
     });
 
-    if (this.sortColumn) this.sort(this.sortColumn, true);
+    this.currentPage = 1;
+    if (this.sortColumn) this.sort(this.sortColumn, true, true);
     this.render();
   }
 
-  sort(field, skipRender = false) {
-    if (this.sortColumn === field) {
-      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-    } else {
-      this.sortColumn = field;
-      this.sortDirection = 'asc';
+  sort(field, skipRender = false, preserveDirection = false) {
+    if (!preserveDirection) {
+      if (this.sortColumn === field) {
+        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        this.sortColumn = field;
+        this.sortDirection = 'asc';
+      }
+      this.currentPage = 1;
     }
 
     this.filteredData.sort((a, b) => {
@@ -207,12 +223,17 @@ class SimpleTable {
     this.tbody.innerHTML = '';
 
     if (this.filteredData.length === 0) {
-      this.tbody.innerHTML = `<tr><td colspan="${this.columns.length}" style="text-align:center;padding:20px">No hay datos</td></tr>`;
+      this.tbody.innerHTML = `<tr><td colspan="${this.columns.length}" style="text-align:center;padding:20px">No data</td></tr>`;
+      if (this.pageSize) this._updatePagination();
       return;
     }
 
+    const pageData = this.pageSize
+      ? this.filteredData.slice((this.currentPage - 1) * this.pageSize, this.currentPage * this.pageSize)
+      : this.filteredData;
+
     const fragment = document.createDocumentFragment();
-    this.filteredData.forEach((row, i) => {
+    pageData.forEach((row) => {
       const tr = document.createElement('tr');
       if (this.selectedRows.has(row)) tr.className = 'selected';
       if (this.selectable) {
@@ -228,12 +249,14 @@ class SimpleTable {
       fragment.appendChild(tr);
     });
     this.tbody.appendChild(fragment);
+    if (this.pageSize) this._updatePagination();
   }
 
   handleRowClick(e, row, tr) {
     if (e.ctrlKey || e.metaKey) {
       this.selectedRows.has(row) ? this.selectedRows.delete(row) : this.selectedRows.add(row);
     } else if (e.shiftKey && this.lastSelected) {
+      this.selectedRows.clear();
       this.selectRange(this.lastSelected, row);
     } else {
       this.selectedRows.clear();
@@ -262,7 +285,7 @@ class SimpleTable {
     e.preventDefault();
     this.resizingIdx = index;
     this.startX = e.clientX;
-    this.startWidth = this.colgroup.children[index].offsetWidth;
+    this.startWidth = this.table.querySelectorAll('thead tr:first-child th')[index].offsetWidth;
     document.addEventListener('mousemove', this.onMouseMove);
     document.addEventListener('mouseup', this.onMouseUp);
   }
@@ -292,8 +315,80 @@ class SimpleTable {
     if (this.table) this.table.style.width = '100%';
   }
 
+  _createPaginationBar() {
+    const bar = document.createElement('div');
+    bar.className = 'simple-table-pagination';
+
+    this._pagePrev = document.createElement('button');
+    this._pagePrev.className = 'st-page-btn';
+    this._pagePrev.innerHTML = '&#8249;';
+    this._pagePrev.addEventListener('click', () => this._goToPage(this.currentPage - 1));
+
+    this._pageNext = document.createElement('button');
+    this._pageNext.className = 'st-page-btn';
+    this._pageNext.innerHTML = '&#8250;';
+    this._pageNext.addEventListener('click', () => this._goToPage(this.currentPage + 1));
+
+    this._pageNumbers = document.createElement('span');
+    this._pageNumbers.className = 'st-page-numbers';
+
+    this._pageInfo = document.createElement('span');
+    this._pageInfo.className = 'st-page-info';
+
+    bar.appendChild(this._pagePrev);
+    bar.appendChild(this._pageNumbers);
+    bar.appendChild(this._pageNext);
+    bar.appendChild(this._pageInfo);
+    return bar;
+  }
+
+  _updatePagination() {
+    const total = this.filteredData.length;
+    const totalPages = Math.max(1, Math.ceil(total / this.pageSize));
+    if (this.currentPage > totalPages) this.currentPage = totalPages;
+
+    this._pagePrev.disabled = this.currentPage <= 1;
+    this._pageNext.disabled = this.currentPage >= totalPages;
+
+    this._pageNumbers.innerHTML = '';
+    this._getPageRange(this.currentPage, totalPages).forEach(p => {
+      if (p === '…') {
+        const span = document.createElement('span');
+        span.className = 'st-page-ellipsis';
+        span.textContent = '…';
+        this._pageNumbers.appendChild(span);
+      } else {
+        const btn = document.createElement('button');
+        btn.textContent = p;
+        btn.className = 'st-page-btn' + (p === this.currentPage ? ' active' : '');
+        btn.addEventListener('click', () => this._goToPage(p));
+        this._pageNumbers.appendChild(btn);
+      }
+    });
+
+    const start = total === 0 ? 0 : (this.currentPage - 1) * this.pageSize + 1;
+    const end = Math.min(this.currentPage * this.pageSize, total);
+    this._pageInfo.textContent = total === 0 ? 'No results' : `${start}–${end} of ${total}`;
+  }
+
+  _getPageRange(current, total) {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (current <= 4) return [1, 2, 3, 4, 5, '…', total];
+    if (current >= total - 3) return [1, '…', total - 4, total - 3, total - 2, total - 1, total];
+    return [1, '…', current - 1, current, current + 1, '…', total];
+  }
+
+  _goToPage(page) {
+    const totalPages = Math.max(1, Math.ceil(this.filteredData.length / this.pageSize));
+    this.currentPage = Math.max(1, Math.min(page, totalPages));
+    this.render();
+  }
+
   destroy() {
+    document.removeEventListener('mousemove', this.onMouseMove);
+    document.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('resize', this.onResize);
+    if (this._resizeObserver) this._resizeObserver.disconnect();
     this.container.innerHTML = '';
   }
 }

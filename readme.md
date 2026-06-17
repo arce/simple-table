@@ -15,6 +15,10 @@ A lightweight, vanilla JavaScript library for creating interactive data tables w
 - **Zero dependencies** – pure JavaScript + CSS.
 - **Customizable** – control data, column definitions, selection callbacks.
 
+## Example
+
+Open [`examples/index.html`](examples/index.html) in your browser to see a working demo with sorting, filtering, column resizing, row selection, and pagination.
+
 ## Installation
 
 Include the CSS and JavaScript files in your HTML:
@@ -63,6 +67,7 @@ Or copy the class directly into your project.
 | `selectable`  | `boolean`  | `false`     | Enable row selection (click, Ctrl+click, Shift+click). |
 | `responsive`  | `boolean`  | `true`      | Automatically adjust layout when container resizes. |
 | `height`      | `string`   | `'100%'`    | CSS height of the table container (e.g., `'300px'`, `'50vh'`). |
+| `pageSize`    | `number`   | `null`      | Number of rows per page. When set, a pagination bar is rendered below the table. `null` disables pagination (all rows shown). |
 | `onRowSelect` | `Function` | `undefined` | Callback fired when selection changes. Receives array of selected row objects. |
 
 ## Methods
